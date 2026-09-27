@@ -1,0 +1,7 @@
+{
+  "env": {
+    "STRIX_LLM": "openai/strix-runner",
+    "OPENAI_API_KEY": "strix-local-noauth",
+    "OPENAI_BASE_URL": "http://127.0.0.1:8801/v1"
+  }
+}

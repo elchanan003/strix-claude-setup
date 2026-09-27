@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# strix-claude — run Strix with its LLM pointed at the local claude -p bridge.
+#
+# Starts the OpenAI-compatible shim (claude-cli-runner) if it is not already
+# listening, then execs `strix` with the same args you would normally pass.
+# All the LLM config lives in ~/.strix/cli-config.json (STRIX_LLM,
+# LLM_API_BASE, LLM_API_KEY), so this only makes sure the shim is up.
+#
+#   strix-claude -t http://target.example -n
+set -euo pipefail
+
+RUNNER_DIR="${RUNNER_DIR:-$HOME/claude-cli-runner}"
+PORT="${PORT:-8801}"
+SHIM_MODEL="${SHIM_CLAUDE_MODEL:-sonnet}"
+LOG="${SHIM_LOG:-$HOME/.strix/shim.log}"
+
+# Make node (nvm) and strix (uv) reachable regardless of the caller's shell.
+NODE_BIN="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -1 || true)"
+[ -n "$NODE_BIN" ] && export PATH="$NODE_BIN:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
+
+shim_up() { curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; }
+
+if shim_up; then
+  echo "[strix-claude] shim already listening on :${PORT}"
+else
+  echo "[strix-claude] starting claude -p shim on :${PORT} (model ${SHIM_MODEL}), log: ${LOG}"
+  mkdir -p "$(dirname "$LOG")"
+  RUNNER_MODE=personal BIND=127.0.0.1 PORT="${PORT}" SHIM_CLAUDE_MODEL="${SHIM_MODEL}" \
+    nohup node "${RUNNER_DIR}/examples/openai-server.mjs" >>"$LOG" 2>&1 &
+  for _ in $(seq 1 30); do
+    shim_up && break
+    sleep 0.5
+  done
+  if ! shim_up; then
+    echo "[strix-claude] shim failed to come up — see ${LOG}" >&2
+    exit 1
+  fi
+  echo "[strix-claude] shim ready"
+fi
+
+exec strix "$@"
